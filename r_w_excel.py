@@ -11,8 +11,6 @@ from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.utils.units import pixels_to_EMU
 import threading
 import os
-import asyncio
-import aiohttp
 
 lock = threading.Lock()
 count = 0
