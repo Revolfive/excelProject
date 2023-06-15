@@ -14,7 +14,7 @@ import os
 
 lock = threading.Lock()
 count = 0
-max_size = 15  # 单文件最大占用内存
+max_size = 10  # 单文件最大占用内存
 
 
 def transpose(matrix):
@@ -54,7 +54,7 @@ def get_filename():
 
 def read_template():
     # 打开Excel文件  获取母版excel数据
-    workbook = load_workbook(filename=r'template\template.xlsx')
+    workbook = load_workbook(filename=r'template/template.xlsx')
 
     # 选择一个工作表
     worksheet = workbook.worksheets[0]
@@ -69,7 +69,7 @@ def read_template():
 def read_excel():
     filename = get_filename()
     # 打开Excel文件  获取母版excel数据
-    workbook = load_workbook(filename=fr'olddata\{filename}')
+    workbook = load_workbook(filename=fr'olddata/{filename}')
 
     # 选择一个工作表
     worksheet = workbook.worksheets[0]
@@ -109,26 +109,27 @@ def write_excel(data, i, distance):
     else:
         begin, end = (i * distance, (i + 1) * distance)
     for index, row in enumerate(data[begin:end]):
-        url = row[0]
+        urls = row[0]
 
         # 将图片外的内容写入excel
         row[0] = ''
         # if len(row[4]) <= 32:
         worksheet.append(row)
         try:
-            # _filename = url.split('/')[-1]
-            _filename = '%s.%s' % (row[2], url.split('/')[-1].split('.')[-1])
-            # 获取图片并调整图片大小和单元格大小
-            img = Image(rf'img\{_filename}')
-            img.width, img.height = (img.width * 72 / img.height, 72)
-            offset_img(img, col=0, row=index + 2)
+            photos = urls.split(',')
+            for ii, url in enumerate(photos):
+                _filename = '%s.%s' % (f'p_{ii}_{row[2]}', url.split('/')[-1].split('.')[-1])
+                # 获取图片并调整图片大小和单元格大小
+                img = Image(rf'img/{_filename}')
+                img.width, img.height = (img.width * 72 / img.height, 72)
+                offset_img(img, col=0, row=index + 2)
 
-            worksheet.column_dimensions['A'].width = 10 + 2
+                worksheet.column_dimensions['A'].width = 10 + 2
 
-            worksheet.row_dimensions[index + 3].height = 60 + 12
-            worksheet.add_image(img)  # 插入图片
+                worksheet.row_dimensions[index + 3].height = 60 + 12
+                worksheet.add_image(img)  # 插入图片
         except FileNotFoundError:
-            row[0] = url
+            row[0] = urls
             print(f'找不到图片信息，表格内容:{row}')
         except AttributeError:
             pass
@@ -139,7 +140,7 @@ def write_excel(data, i, distance):
     count += 1
     print(f'当前已完成excel进度：{count}')
     lock.release()
-    workbook.save(filename=f'newdata\example{begin}-{end}.xlsx')
+    workbook.save(filename=fr'newdata/example{begin}-{end}.xlsx')
 
 
 def write_excel_for_size(data):
@@ -149,21 +150,27 @@ def write_excel_for_size(data):
     for index, row in enumerate(data):
         if b_to_e[1] > 0:
             b_to_e = [index - 1, 0]
-        url = row[0]
+        urls = row[0]
         try:
-            _filename = '%s.%s' % (row[2], url.split('/')[-1].split('.')[-1])
-            # 获取图片大小
-            size = os.path.getsize(rf'img\{_filename}') / 1024 / 1024
-            current_size += size
-            print(current_size)
-            if current_size > max_size:
-                current_size = 0
+            photos = urls.split(',')
+            photos_size = 0
+            for ii, url in enumerate(photos):
+
+                _filename = '%s.%s' % (f'p_{ii}_{row[2]}', url.split('/')[-1].split('.')[-1])
+                # 获取图片大小
+                size = os.path.getsize(fr'img/{_filename}') / 1024 / 1024
+                photos_size += size
+            current_size += photos_size
+            if index - b_to_e[0] >= 100 or current_size > max_size:  # 不大于100款 且 不大于指定大小
+                # print(max_size)
+                current_size = photos_size
                 b_to_e[1] = index
                 b_to_e_lists.append(b_to_e)
         except:
             pass
     b_to_e[1] = len(data)
     b_to_e_lists.append(b_to_e)
+    # print(b_to_e_lists)
     for b2e in b_to_e_lists:
         write_excel(data=data, i=0, distance=b2e)
 
@@ -171,15 +178,17 @@ def write_excel_for_size(data):
 def get_pic(data, i, distance):
     begin, end = (i * distance, (i + 1) * distance)
     for row in data[begin:end]:
-        url = row[0]
+        urls = row[0]
         try:
-            _filename = url.split('/')[-1]
-            _filename = '%s.%s' % (row[2], url.split('/')[-1].split('.')[-1])
-            res = requests.get(url).content
-
-            # 保存图片
-            with open(fr'img\{_filename}', 'wb') as f:
-                f.write(res)
+            # _filename = url.split('/')[-1]
+            photos = urls.split(',')
+            for ii, url in enumerate(photos):
+                _filename = '%s.%s' % (f'p_{ii}_{row[2]}', url.split('/')[-1].split('.')[-1])
+                if not os.path.exists(fr'img/{_filename}'):
+                    res = requests.get(url).content
+                    # 保存图片
+                    with open(fr'img/{_filename}', 'wb') as f:
+                        f.write(res)
         except:
             print(f'找不到图片信息，表格内容:{row}')
         lock.acquire()
@@ -212,33 +221,28 @@ if __name__ == '__main__':
         print('请输入:')
         print('1:将图片下载到本地')
         print('2:生成新的款型库导入模板')
-        print(f'3:按当文件大小不超过{max_size}M写入excel')
+        print(f'3:生成新的且文件大小不超过指定大小(默认10M)且不大于100款的款型库导入模板')
         print('4:退出')
 
-        model = int(input('>>'))
-        if model == 1:
-            while True:
-                count = 0
-                distance = int(input('请输入单个线程下载图片的数量:'))
-                if type(distance) == int:
-                    # asyncio.run(main(fun=get_pic, data=_data, distance=distance))
-                    run(fun=get_pic, data=_data, distance=distance)  # 获取图片
-                    break
-                else:
-                    print('输入不合法，请重新输入')
-        elif model == 2:
-            while True:
-                count = 0
-                distance = int(input('请输入单个文件包含的款式数量:'))
-                if type(distance) == int:
-                    run(fun=write_excel, data=_data, distance=distance)  # 写入excel
-                    break
-                else:
-                    print('输入不合法，请重新输入')
-        elif model == 3:
-            write_excel_for_size(_data)
-            break
-        elif model == 4:
-            break
+        try:
+            model = int(input('>>'))
+        except ValueError:
+            print('输入不合法，请重新输入!')
+            continue
         else:
-            print('输入不合法，请重新输入')
+            if model == 1:
+                distance = int(input('请输入单个线程下载图片的数量:'))
+                run(fun=get_pic, data=_data, distance=distance)  # 获取图片
+                break
+            elif model == 2:
+                distance = int(input('请输入单个文件包含的款式数量:'))
+                run(fun=write_excel, data=_data, distance=distance)  # 写入excel
+                break
+            elif model == 3:
+                max_size = int(input('请输入单个文件大小，单位M:'))
+                write_excel_for_size(_data)
+                break
+            elif model == 4:
+                break
+            else:
+                print('输入不合法，请重新输入!')
